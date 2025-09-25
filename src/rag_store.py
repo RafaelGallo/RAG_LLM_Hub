@@ -1,99 +1,149 @@
+# rag_store.py
 """
-Módulo: rag_store.py
-Descrição: Implementação de um Vector Store baseado em FAISS para integração com LLM.
-O Vector Store é responsável por armazenar embeddings, realizar buscas semânticas
-e suportar operações de RAG (Retrieval-Augmented Generation).
+Módulo para gerenciamento do Vector Store (FAISS) com embeddings e histórico.
+Integra SentenceTransformers para embeddings e Gemini para geração de respostas.
 """
 
+import os
+import json
 import faiss
 import numpy as np
-import json
-from typing import List, Dict
+from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer
+from config import GEMINI_API_KEY, HF_TOKEN
 from LLM_model import LLMModel
 
 
 class VectorStore:
     """
-    Classe responsável por gerenciar embeddings com FAISS, incluindo:
-    - FAQ em memória
-    - Histórico de leads
-    - Suporte a busca semântica
+    Classe para gerenciar embeddings, histórico e busca semântica usando FAISS.
     """
 
-    def __init__(self, embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
+    def __init__(
+        self,
+        api_key: str,
+        embed_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+    ):
         """
-        Inicializa o Vector Store com modelo de embeddings e LLM.
-        """
-        self.embed_model = embed_model
-        self.encoder = SentenceTransformer(embed_model)
-        self.llm = LLMModel()  # LLMModel lê a chave do ambiente automaticamente
+        Inicializa o Vector Store.
 
-        # Estruturas internas
+        Args:
+            api_key (str): Chave da API do Gemini.
+            embed_model (str): Nome do modelo de embeddings.
+        """
+        self.llm = LLMModel(api_key)
+
+        # Fallback automático para modelo público caso não haja HF_TOKEN
+        if HF_TOKEN:
+            self.encoder = SentenceTransformer(embed_model)
+        else:
+            print(
+                "Aviso: Nenhum token Hugging Face detectado. "
+                "Usando modelo público mais leve."
+            )
+            self.encoder = SentenceTransformer(
+                "sentence-transformers/paraphrase-MiniLM-L3-v2"
+            )
+
         self.index = None
-        self.faq: List[Dict] = []
-        self.history: List[Dict] = []
+        self.history: Dict[str, str] = {}
+        self.faq: List[Dict[str, str]] = []
 
-    def load_faq_from_json(self, json_path: str) -> None:
+    # -------------------------------------------------------------------------
+    # FAQ
+    # -------------------------------------------------------------------------
+    def load_faq_from_json(self, path: str) -> None:
         """
-        Carrega perguntas e respostas de um arquivo JSON para a memória
-        e cria o índice FAISS com embeddings.
+        Carrega FAQ de um arquivo JSON.
+
+        Args:
+            path (str): Caminho do arquivo JSON.
         """
-        with open(json_path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             self.faq = json.load(f)
 
+        if not self.faq:
+            raise ValueError("O arquivo FAQ está vazio.")
+
+        self._build_faq_index()
+
+    def _build_faq_index(self) -> None:
+        """
+        Constrói o índice FAISS a partir das perguntas do FAQ.
+        """
         questions = [item["q"] for item in self.faq]
         embeddings = self.encoder.encode(questions, convert_to_numpy=True)
 
-        d = embeddings.shape[1]
-        self.index = faiss.IndexFlatL2(d)
+        dim = embeddings.shape[1]
+        self.index = faiss.IndexFlatL2(dim)
         self.index.add(embeddings)
 
-    def rag_answer(self, question: str, top_k: int = 2) -> Dict:
+    def rag_answer(self, question: str, top_k: int = 2) -> Dict[str, Any]:
         """
-        Recupera a resposta mais próxima do FAQ com base na similaridade semântica.
+        Busca a resposta mais relevante no FAQ.
+
+        Args:
+            question (str): Pergunta de entrada.
+            top_k (int): Número de candidatos retornados.
+
+        Returns:
+            dict: Contendo a pergunta, resposta e candidatos.
         """
         if not self.index:
-            raise ValueError("O índice FAISS não foi inicializado. Carregue o FAQ primeiro.")
+            raise ValueError("Índice FAISS não foi inicializado.")
 
         q_emb = self.encoder.encode([question], convert_to_numpy=True)
         distances, indices = self.index.search(q_emb, top_k)
 
         candidates = []
         for idx in indices[0]:
-            if idx < len(self.faq):
-                candidates.append(self.faq[idx])
+            item = self.faq[idx]
+            candidates.append({"question": item["q"], "answer": item["a"]})
 
-        best = candidates[0] if candidates else {"q": "", "a": "Nenhuma resposta encontrada."}
+        best = candidates[0]
+        return {"question": best["question"], "answer": best["answer"], "candidates": candidates}
 
-        return {
-            "question": best["q"],
-            "answer": best["a"],
-            "candidates": candidates,
-        }
-
+    # -------------------------------------------------------------------------
+    # Histórico
+    # -------------------------------------------------------------------------
     def add_history(self, lead_id: str, resumo: str) -> None:
         """
-        Armazena um resumo no histórico com embedding associado.
-        """
-        emb = self.encoder.encode([resumo], convert_to_numpy=True)
-        self.history.append({"lead_id": lead_id, "resumo": resumo, "embedding": emb})
+        Adiciona resumo ao histórico.
 
-    def search_history(self, query: str, top_k: int = 3) -> List[Dict]:
+        Args:
+            lead_id (str): Identificador do lead.
+            resumo (str): Texto do resumo.
         """
-        Realiza busca semântica no histórico de leads.
+        self.history[lead_id] = resumo
+
+    def search_history(self, query: str, top_k: int = 3) -> List[Dict[str, str]]:
+        """
+        Busca semântica no histórico de leads.
+
+        Args:
+            query (str): Texto de busca.
+            top_k (int): Número de resultados.
+
+        Returns:
+            list: Resultados contendo ID e resumo.
         """
         if not self.history:
             return []
 
-        query_emb = self.encoder.encode([query], convert_to_numpy=True)
-        sims = []
+        ids = list(self.history.keys())
+        textos = list(self.history.values())
+        embeddings = self.encoder.encode(textos, convert_to_numpy=True)
 
-        for h in self.history:
-            sim = float(np.dot(query_emb, h["embedding"].T) / (np.linalg.norm(query_emb) * np.linalg.norm(h["embedding"])))
-            sims.append((sim, h))
+        dim = embeddings.shape[1]
+        hist_index = faiss.IndexFlatL2(dim)
+        hist_index.add(embeddings)
 
-        sims.sort(key=lambda x: x[0], reverse=True)
-        results = [h for _, h in sims[:top_k]]
+        q_emb = self.encoder.encode([query], convert_to_numpy=True)
+        distances, indices = hist_index.search(q_emb, top_k)
+
+        results = []
+        for idx in indices[0]:
+            lead_id = ids[idx]
+            results.append({"lead_id": lead_id, "resumo": self.history[lead_id]})
 
         return results

@@ -1,106 +1,106 @@
-# src/rag_store.py
+# rag_store.py
+# Módulo responsável pelo armazenamento vetorial (FAISS) e histórico de interações
+# Utiliza SentenceTransformers para embeddings e integra com LLMModel (Gemini + HF)
+
 import os
 import json
-import numpy as np
 import faiss
-from typing import List, Dict, Tuple
-from LLM_model import LLMModel   # ✅ import direto, sem "src."
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from typing import List, Dict
+from LLM_model import LLMModel
 
 
 class VectorStore:
-    def __init__(self, api_key: str,
-                 embed_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-                 base_dir="base"):
+    """
+    Classe para gerenciar um banco de vetores com FAISS.
+    Armazena perguntas/respostas do FAQ e histórico de leads.
+    """
+
+    def __init__(self):
+        # Inicializa o modelo de embeddings
+        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+        # Inicializa FAISS index (cosine similarity)
+        self.index = faiss.IndexFlatIP(384)  # Dimensão do all-MiniLM-L6-v2 é 384
+        self.data: List[Dict] = []
+
+        # Inicializa o modelo LLM
+        self.llm = LLMModel()
+
+        # Histórico de leads
+        self.history: Dict[str, str] = {}
+
+    def embed(self, text: str) -> np.ndarray:
         """
-        Vector DB para FAQ e histórico de leads.
-        - Salva embeddings (FAISS) + metadados (JSON) em 'base/'.
-        - Sempre roda em CPU (via LLMModel).
+        Gera o embedding de um texto usando SentenceTransformers.
         """
-        self.llm = LLMModel(api_key, embed_model)
+        emb = self.embedder.encode([text], convert_to_numpy=True, normalize_embeddings=True)
+        return emb
 
-        # Armazenamento FAQ
-        self.faq_index = None
-        self.faq_items: List[Tuple[str, str]] = []
-
-        # Armazenamento histórico
-        self.hist_index = None
-        self.hist_items: List[Dict] = []
-
-        # Pasta base/
-        self.base_dir = base_dir
-        os.makedirs(self.base_dir, exist_ok=True)
-        self.hist_index_path = os.path.join(self.base_dir, "history.index")
-        self.hist_meta_path = os.path.join(self.base_dir, "history.json")
-
-        # Se já existe histórico salvo, carrega
-        self._load_history_from_disk()
-
-    # =================== Embeddings ===================
-    def _embed(self, text: str) -> np.ndarray:
-        return np.array(self.llm.embed(text), dtype="float32")
-
-    # =================== FAQ ===================
-    def load_faq_from_json(self, path: str):
-        """Carrega base de FAQ de um JSON e cria índice FAISS."""
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        self.faq_items = [(d["q"], d["a"]) for d in data]
-        embs = np.vstack([self._embed(q) for q, _ in self.faq_items])
-
-        self.faq_index = faiss.IndexFlatL2(embs.shape[1])
-        self.faq_index.add(embs)
-
-    def rag_answer(self, query: str, top_k: int = 1) -> Dict[str, str]:
-        """Busca no FAQ e reescreve resposta em tom natural com Gemini."""
-        if self.faq_index is None:
-            raise RuntimeError("FAQ index não inicializado. Chame load_faq_from_json primeiro.")
-
-        q_emb = self._embed(query).reshape(1, -1)
-        D, I = self.faq_index.search(q_emb, top_k)
-        hits = [self.faq_items[i] for i in I[0]]
-        best_q, best_a = hits[0]
-
-        # Reformulação
-        prompt = f"""
-        Pergunta do lead: {query}
-        Resposta do FAQ: {best_a}
-        Reescreva em tom natural, amigável e claro (2-4 linhas),
-        como se fosse o assistente da Welhome respondendo.
+    def load_faq_from_json(self, json_path: str):
         """
-        answer = self.llm.generate(prompt)
+        Carrega o FAQ a partir de um arquivo JSON.
+        Estrutura esperada: [{"q": "...", "a": "..."}]
+        """
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(f"Arquivo FAQ não encontrado: {json_path}")
 
-        return {
-            "question": best_q,
-            "answer": answer,
-            "candidates": [{"q": q, "a": a} for q, a in hits],
-        }
+        with open(json_path, "r", encoding="utf-8") as f:
+            faq_data = json.load(f)
 
-    # =================== Histórico ===================
-    def add_history(self, lead_id: str, resumo_texto: str):
-        emb = self._embed(resumo_texto).reshape(1, -1)
-        if self.hist_index is None:
-            self.hist_index = faiss.IndexFlatL2(emb.shape[1])
-        self.hist_index.add(emb)
-        self.hist_items.append({"lead_id": lead_id, "resumo": resumo_texto})
-        self._save_history_to_disk()
+        for item in faq_data:
+            q = item["q"]
+            a = item["a"]
+            emb = self.embed(q)
+            self.index.add(emb)
+            self.data.append({"question": q, "answer": a})
 
-    def search_history(self, query: str, top_k: int = 3) -> List[Dict[str, str]]:
-        if self.hist_index is None or len(self.hist_items) == 0:
+    def rag_answer(self, query: str, top_k: int = 2) -> Dict:
+        """
+        Recupera a resposta mais próxima do FAQ via FAISS.
+        """
+        q_emb = self.embed(query)
+        D, I = self.index.search(q_emb, top_k)
+
+        if len(I[0]) == 0:
+            return {"question": None, "answer": "Não encontrei resposta no FAQ.", "candidates": []}
+
+        candidates = []
+        for idx in I[0]:
+            if idx < len(self.data):
+                candidates.append(self.data[idx])
+
+        hit = candidates[0] if candidates else {"question": None, "answer": "Sem resposta"}
+        return {"question": hit["question"], "answer": hit["answer"], "candidates": candidates}
+
+    def add_history(self, lead_id: str, resumo: str):
+        """
+        Adiciona um resumo de lead ao histórico.
+        """
+        self.history[lead_id] = resumo
+
+    def search_history(self, query: str, top_k: int = 3) -> List[Dict]:
+        """
+        Busca semântica no histórico de leads.
+        """
+        if not self.history:
             return []
-        q_emb = self._embed(query).reshape(1, -1)
-        D, I = self.hist_index.search(q_emb, top_k)
-        return [self.hist_items[i] for i in I[0] if 0 <= i < len(self.hist_items)]
 
-    # =================== Persistência ===================
-    def _save_history_to_disk(self):
-        if self.hist_index:
-            faiss.write_index(self.hist_index, self.hist_index_path)
-            with open(self.hist_meta_path, "w", encoding="utf-8") as f:
-                json.dump(self.hist_items, f, ensure_ascii=False, indent=2)
+        keys = list(self.history.keys())
+        values = list(self.history.values())
 
-    def _load_history_from_disk(self):
-        if os.path.exists(self.hist_index_path) and os.path.exists(self.hist_meta_path):
-            self.hist_index = faiss.read_index(self.hist_index_path)
-            with open(self.hist_meta_path, "r", encoding="utf-8") as f:
-                self.hist_items = json.load(f)
+        embs = self.embed(values)
+        q_emb = self.embed(query)
+
+        index_hist = faiss.IndexFlatIP(384)
+        index_hist.add(embs)
+
+        D, I = index_hist.search(q_emb, top_k)
+
+        results = []
+        for idx in I[0]:
+            if idx < len(keys):
+                results.append({"lead_id": keys[idx], "resumo": values[idx]})
+
+        return results

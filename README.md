@@ -1,14 +1,7 @@
 # Welhome Assistant 
 
-[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)  
-[![Streamlit](https://img.shields.io/badge/Streamlit-App-red?logo=streamlit)](https://streamlit.io/)  
-[![FAISS](https://img.shields.io/badge/FAISS-Vector%20Search-orange)](https://faiss.ai/)  
-[![SentenceTransformers](https://img.shields.io/badge/Sentence--Transformers-Embeddings-green)](https://www.sbert.net/)  
-[![Transformers](https://img.shields.io/badge/HuggingFace-Transformers-yellow?logo=huggingface)](https://huggingface.co/transformers/)  
-[![Gemini](https://img.shields.io/badge/Google-Gemini%20API-brightgreen?logo=google)](https://ai.google.dev/)  
-[![Matplotlib](https://img.shields.io/badge/Matplotlib-Charts-blue)](https://matplotlib.org/)  
-[![NetworkX](https://img.shields.io/badge/NetworkX-Graph%20Analysis-purple)](https://networkx.org/)  
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/) [![Streamlit](https://img.shields.io/badge/Streamlit-App-red?logo=streamlit)](https://streamlit.io/) [![FAISS](https://img.shields.io/badge/FAISS-Vector%20Search-orange)](https://faiss.ai/) [![SentenceTransformers](https://img.shields.io/badge/Sentence--Transformers-Embeddings-green)](https://www.sbert.net/) [![Transformers](https://img.shields.io/badge/HuggingFace-Transformers-yellow?logo=huggingface)](https://huggingface.co/transformers/) [![Gemini](https://img.shields.io/badge/Google-Gemini%20API-brightgreen?logo=google)](https://ai.google.dev/) [![Matplotlib](https://img.shields.io/badge/Matplotlib-Charts-blue)](https://matplotlib.org/) [![NetworkX](https://img.shields.io/badge/NetworkX-Graph%20Analysis-purple)](https://networkx.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 
 O **Welhome Assistant** é um projeto de demonstração que combina **LLMs (Gemini)**, **RAG (FAISS)** e visualização de grafos (**GraphRAG**) para oferecer um assistente inteligente de vendas.  
 Ele foi desenvolvido como um **case de entrevista técnica**, demonstrando habilidades de **engenharia de prompts, integração de LLMs, RAG, e visualização de conhecimento**.
@@ -125,22 +118,39 @@ python py/graph_faq.py
 
 ![Chatbot](img/001.png)
 
+Essas imagens mostram a interface em Streamlit.
+A primeira tela destaca o formulário de entrada de leads com campos de nome, quantidade de imóveis, localização e experiência.
+
 ### 2. Resumo Estruturado
 
 ![Resumo](img/002.png)
+
+A segunda mostra a geração automática de pitch e resumo estruturado, que pode ser usado diretamente pela equipe de vendas.
+O layout é limpo, com abas para Chatbot, RAG e Histórico, facilitando o uso.
 
 ### 3. RAG (FAQ)
 
 ![RAG](img/003.png)
 
+Demonstra a funcionalidade de busca no FAQ expandido (RAG).
+O usuário faz uma pergunta, e o sistema encontra a resposta mais relevante com base nas embeddings.
+Além disso, a resposta é naturalizada pelo modelo Gemini, tornando-a clara e amigável para o lead.
+
 ### 4. Histórico de Leads
 
-![Histórico](img/004.png)
+![Histórico](img/004.png) 
+
+Mostra a aba de histórico com exportação em CSV.
+Cada interação com leads é salva, permitindo acompanhamento e análise de marketing posterior.
+Esse recurso conecta a parte de gestão de vendas com insights automáticos.
 
 ### 5. Knowledge Graph (FAQ)
 
 ![GraphRAG](output/graph_LLM.png)
 
+É a representação visual do grafo de conhecimento construído a partir do FAQ.
+Os nós azuis representam perguntas e os nós verdes representam respostas, conectados por arestas "responde".
+Esse gráfico ajuda a entender como as informações estão relacionadas e pode ser expandido para análises mais complexas de GraphRAG.
 
 ## Tecnologias Utilizadas
 

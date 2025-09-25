@@ -5,10 +5,10 @@ from huggingface_hub import login
 
 load_dotenv()
 
-# Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 
-# Hugging Face
-HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 if HF_TOKEN:
     login(HF_TOKEN)
+else:
+    print("Nenhum token do Hugging Face encontrado. Modelos podem falhar.")

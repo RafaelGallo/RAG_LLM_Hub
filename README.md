@@ -84,7 +84,45 @@ GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 HUGGINGFACE_TOKEN=YOUR_HF_TOKEN
 ```
 
-## Como Rodar
+## Modelos Utilizados
+
+Este projeto combina **LLMs (Large Language Models)** com **Transformers** para RAG:
+
+* **Google Gemini 2.0 Pro**
+  Utilizado como modelo de geração de linguagem natural (LLM principal).
+  [Documentação Gemini](https://ai.google.dev/)
+
+* **SentenceTransformers - all-MiniLM-L6-v2**
+  Usado para geração de embeddings e indexação vetorial com FAISS.
+  [SentenceTransformers](https://www.sbert.net/)
+
+* **Hugging Face Transformers**
+  Biblioteca base para carregamento dos modelos e integração com embeddings.
+  [Transformers](https://huggingface.co/transformers/)
+
+## Principais Dependências
+
+* `google-generativeai` – API oficial do Gemini
+* `sentence-transformers==2.5.1`
+* `transformers==4.41.2`
+* `faiss-cpu==1.12.0`
+* `torch>=2.4.1`
+* `streamlit==1.38.0`
+* `networkx==3.3`, `matplotlib` (para análise de grafos e plotagens)
+
+## Como rodar
+
+```bash
+# Criar e ativar ambiente virtual
+conda create -n agenteLLM2 python=3.10 -y
+conda activate agenteLLM2
+
+# Instalar dependências
+pip install -r requirements.txt
+
+# Rodar a aplicação Streamlit
+streamlit run src/app_streamlit.py
+```
 
 ### Interface Web (Streamlit)
 

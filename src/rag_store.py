@@ -1,54 +1,87 @@
+"""
+Módulo responsável pelo armazenamento vetorial (FAISS)
+e histórico de interações usando SentenceTransformers.
+"""
+
+import os
 import json
-from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
+from typing import List, Dict
+from sentence_transformers import SentenceTransformer
 from LLM_model import LLMModel
 
 
 class VectorStore:
-    """Armazena embeddings e textos em FAISS para RAG."""
+    """
+    Classe que integra:
+    - FAISS para busca vetorial
+    - SentenceTransformers para embeddings
+    - LLM Gemini 2.0 Pro para geração de respostas
+    """
 
-    def __init__(self, api_key: str, embed_model: str = "all-MiniLM-L6-v2"):
-        self.llm = LLMModel(api_key, embed_model)
-        self.encoder = self.llm.encoder
+    def __init__(self, api_key: str, embed_model: str = "all-MiniLM-L6-v2") -> None:
+        self.llm = LLMModel(api_key, model_name="gemini-2.0-pro")
+        self.encoder = SentenceTransformer(embed_model)
+
+        # FAISS
         self.index = None
-        self.texts = []
-        self.hist_items = []  # histórico de interações
+        self.texts: List[str] = []
 
-    def load_faq_from_json(self, file_path: str):
-        """Carrega perguntas/respostas do FAQ e indexa em FAISS."""
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        # Histórico
+        self.hist_items: List[Dict[str, str]] = []
 
-            if not isinstance(data, list):
-                raise ValueError("O JSON do FAQ deve ser uma lista de objetos.")
+    # ----------------------------
+    # FAQ
+    # ----------------------------
+    def load_faq_from_json(self, json_path: str) -> None:
+        """
+        Carrega um FAQ em JSON e indexa no FAISS.
+        """
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(f"Arquivo FAQ não encontrado: {json_path}")
 
-            self.texts = [item["pergunta"] + " " + item.get("resposta", "")
-                          for item in data]
+        with open(json_path, "r", encoding="utf-8") as f:
+            faq_data = json.load(f)
 
-            embeddings = [self.encoder.encode(t).astype("float32") for t in self.texts]
-            embeddings = np.array(embeddings)
+        # Suporta chaves "pergunta"/"resposta" ou "q"/"a"
+        self.texts = [
+            f"Q: {item.get('pergunta', item.get('q'))}\nA: {item.get('resposta', item.get('a'))}"
+            for item in faq_data
+        ]
 
-            # Cria índice FAISS
-            dim = embeddings.shape[1]
-            self.index = faiss.IndexFlatL2(dim)
-            self.index.add(embeddings)
+        embeddings = self.encoder.encode(self.texts, convert_to_numpy=True)
 
-            print(f"✅ FAQ carregado e indexado com {len(self.texts)} entradas.")
+        dim = embeddings.shape[1]
+        self.index = faiss.IndexFlatL2(dim)
+        self.index.add(embeddings)
 
-        except Exception as e:
-            raise RuntimeError(f"Erro ao carregar FAQ: {e}")
-
-    def search(self, query: str, k: int = 3):
-        """Busca similaridades no índice FAISS."""
+    # ----------------------------
+    # Busca
+    # ----------------------------
+    def search(self, query: str, k: int = 3) -> List[str]:
+        """
+        Busca no FAISS e retorna os textos mais similares.
+        """
         if self.index is None:
-            raise ValueError("O índice FAISS ainda não foi criado.")
+            return ["❌ FAQ não foi carregado no índice."]
 
-        query_emb = self.encoder.encode(query).astype("float32")
-        query_emb = np.expand_dims(query_emb, axis=0)
+        emb = self.encoder.encode([query], convert_to_numpy=True)
+        distances, indices = self.index.search(emb, k)
 
-        distances, indices = self.index.search(query_emb, k)
-        results = [self.texts[i] for i in indices[0]]
+        return [self.texts[i] for i in indices[0] if i < len(self.texts)]
 
-        return results
+    # ----------------------------
+    # Histórico
+    # ----------------------------
+    def add_history(self, query: str, resposta: str) -> None:
+        """
+        Adiciona uma interação ao histórico.
+        """
+        self.hist_items.append({"query": query, "resposta": resposta})
+
+    def get_history(self) -> List[Dict[str, str]]:
+        """
+        Retorna o histórico completo.
+        """
+        return self.hist_items

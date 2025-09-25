@@ -1,34 +1,38 @@
-# LLM_model.py
-# Classe para encapsular o uso de LLMs (Google Gemini API)
-# Responsável por geração de texto a partir de prompts
+"""
+LLM_model.py
+Módulo responsável por interagir com o modelo Gemini da Google
+e gerar respostas/resumos a partir de prompts.
+"""
 
-import os
 import google.generativeai as genai
+from sentence_transformers import SentenceTransformer
 
 
 class LLMModel:
-    """
-    Classe de interface com o modelo Gemini.
-    Utiliza a chave configurada em variáveis de ambiente (.env ou secrets.toml).
-    """
+    """Classe para interação com LLM (Gemini)."""
 
-    def __init__(self, model_name: str = "gemini-1.5-flash"):
-        """
-        Inicializa o cliente Gemini.
-        """
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY não foi encontrada nas variáveis de ambiente.")
-
+    def __init__(self, api_key: str, embed_model: str):
+        # Configuração da API Gemini
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name)
+
+        # ✅ Corrigido: modelo precisa do prefixo "models/"
+        self.gemini = genai.GenerativeModel("models/gemini-1.5-flash")
+
+        # Encoder de embeddings (Hugging Face)
+        self.encoder = SentenceTransformer(embed_model)
 
     def generate(self, prompt: str) -> str:
         """
-        Gera texto a partir de um prompt.
+        Gera uma resposta/resumo usando o modelo Gemini.
         """
         try:
-            resp = self.model.generate_content(prompt)
-            return resp.text.strip() if resp and resp.text else ""
+            response = self.gemini.generate_content(prompt)
+            return response.text if response and response.text else "⚠️ Resposta vazia."
         except Exception as e:
-            return f"[Erro na geração de conteúdo: {e}]"
+            return f"[Erro na geração de conteúdo: {str(e)}]"
+
+    def embed(self, text: str):
+        """
+        Gera embeddings usando SentenceTransformer.
+        """
+        return self.encoder.encode(text).tolist()
